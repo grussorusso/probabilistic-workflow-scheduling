@@ -5,13 +5,12 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from xClouder.scheduler.infrastructure import *
-from xClouder.scheduler.job import *
-from xClouder.scheduler.gpf import GPFGraph
-from xClouder.scheduler.provider import FakeProvider, FakeVMType
-from xClouder.scheduler.prediction import SimplePredictor, UniversalScalabilityFunction
-from xClouder.scheduler import algorithms
-from xClouder.scheduler import distributions
+from scheduler.infrastructure import *
+from scheduler.job import *
+from scheduler.provider import FakeProvider, FakeVMType
+from scheduler.prediction import SimplePredictor, UniversalScalabilityFunction
+from scheduler import algorithms
+from scheduler import distributions
 from scheduler_evaluation import experiment, jobs
 
 FAMILY_SPEEDUP = {"c4": 0.8, "c5": 1.0, "m5": 0.8}
@@ -130,7 +129,7 @@ def main(args):
         job, mean_exec_times, op_output_mb = create_job(args.job)
     else:
         print("Reading GPFGraph from {job_name}...")
-        job = GPFGraph(xml_path=args.job_as_xmlgraph)
+        # TODO: not implemented
         mean_exec_times = None
 
     if mean_exec_times is None:

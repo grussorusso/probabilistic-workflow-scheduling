@@ -1,0 +1,7 @@
+jmetalpy==1.5.5
+networkx==2.8
+numpy
+pandas
+PuLP==2.6.0
+scipy==1.11.1
+six==1.16.0
