@@ -1,6 +1,8 @@
 This repository contains code and data used for the experiments presented
 in the following manuscript:
 
+	G. Russo Russo, R. Marotta, F. Cordari, F. Quaglia, V. Cardellini,
+	P. Di Sanzo, "Efficient Probabilistic Workflow Scheduling for IaaS Clouds", 2023 (under review)
 
 Please find below instructions to use the code.
 
