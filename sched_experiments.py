@@ -24,7 +24,7 @@ def create_job (name):
     elif name == "sipht":
         return jobs.create_sipht()
     elif "sipht" in name:
-        m = re.match("sipht(\d+)", name)
+        m = re.match(r"sipht(\d+)", name)
         n = int(m.groups()[0])
         return jobs.create_sipht(n)
     elif name == "ligo":
@@ -38,7 +38,7 @@ def create_job (name):
     elif name == "dummy-firedetection":
         return jobs.create_dummy_fire_detection()
     elif "epigenomics" in name:
-        m = re.match("epigenomics(\d+)", name)
+        m = re.match(r"epigenomics(\d+)", name)
         n = int(m.groups()[0])
         return jobs.create_epigenomics(n)
     else:
