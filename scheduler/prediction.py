@@ -1,5 +1,6 @@
 from scheduler.job import Operator,Job
 from scheduler.vmprovider import VMType
+from scheduler import distributions
 
 class UniversalScalabilityFunction:
     def __init__ (self, alpha, beta=0.0, single_core_speedup=1.0, name=None):
@@ -53,8 +54,9 @@ class SimplePredictor:
     # op_distributions: dict
     # family_speedup: speedup factor for each VM family
     def __init__ (self, op_distributions: dict, scalability_fun: UniversalScalabilityFunction, family_speedup=None,
-                  op_output_mb={}, vm_startup_time=30):
+                  op_output_mb={}, vm_startup_time=30, data_tx_distribution=distributions.Deterministic(1)):
         self.op_distributions = op_distributions
+        self.data_tx_distribution = data_tx_distribution
         self.scalability_fun = scalability_fun
         self.family_speedup = family_speedup
         self.op_output_mb = op_output_mb
@@ -99,4 +101,14 @@ class SimplePredictor:
         # rescale distribution based on predicted avg exec time
         avg_exec_time = self.exec_time(op, job, vm_type, first_on_the_machine, first_in_the_graph)
         return self.op_distributions[op].rescaled(avg_exec_time)
+
+    def get_writing_time_distribution (self, op: Operator, vm_type: VMType):
+        # rescale distribution based on predicted avg tx time
+        avg_tx_time = self.data_writing_time(op, vm_type)
+        return self.data_tx_distribution.rescaled(avg_tx_time)
+
+    def get_reading_time_distribution (self, op1: Operator, op2: Operator, vm_type: VMType):
+        # rescale distribution based on predicted avg tx time
+        avg_tx_time = self.data_reading_time(op1, op2, vm_type)
+        return self.data_tx_distribution.rescaled(avg_tx_time)
 

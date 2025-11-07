@@ -76,6 +76,7 @@ def evaluate_batch (n, job, predictor, sched_solution, rng=None,
 
     # sample actual execution times
     all_task_durations = compute_task_durations_batch(n, job, sched_solution.vm_schedule, predictor, rng)
+    # TODO: compute tx times
 
     for i in range(n):
         task_durations = {x: all_task_durations[x][i] for x in all_task_durations}

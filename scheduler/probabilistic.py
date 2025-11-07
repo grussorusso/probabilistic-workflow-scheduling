@@ -376,8 +376,11 @@ class PercentileBasedPredictor:
         return distribution.get_percentile(self.percentile)
 
     def data_writing_time (self, op, vm_type=None):
-        return self.base.data_writing_time(op, vm_type)
+        distribution = self.base.get_writing_time_distribution(op, vm_type) 
+        return distribution.get_percentile(self.percentile)
 
     def data_reading_time (self, op1, op2, vm_type=None):
-        return self.base.data_reading_time(op1, op2, vm_type)
+        #return self.base.data_reading_time(op1, op2, vm_type)
+        distribution = self.base.get_reading_time_distribution(op1, op2, vm_type) 
+        return distribution.get_percentile(self.percentile)
 
