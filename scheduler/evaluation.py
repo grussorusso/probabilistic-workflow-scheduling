@@ -7,7 +7,7 @@ from scheduler.job import *
 from scheduler.infrastructure import *
 from scheduler.scheduling import SchedulingSolution, ScheduleEntry
 
-def __evaluate (job, predictor, sol, task_durations):
+def __evaluate (job, predictor, sol, task_durations, task_writing_times, task_reading_times):
     actual_schedules = {}
 
     to_complete = set(list(job.nodes))
@@ -33,7 +33,7 @@ def __evaluate (job, predictor, sol, task_durations):
                 else:
                     start_time = max(start_time, completion_times[p])
                     if sol.subtask2instance[p] != vm:
-                        data_reading_time = max(data_reading_time, predictor.data_reading_time(p[0],next_subtask[0],vm[0]))
+                        data_reading_time = max(data_reading_time, task_reading_times(p,next_subtask))
 
             if not can_execute:
                 continue
@@ -46,7 +46,7 @@ def __evaluate (job, predictor, sol, task_durations):
                 if sol.subtask2instance[p] != vm:
                     colocated_successors = False
             if not colocated_successors:
-                    completion_time += predictor.data_writing_time(next_subtask[0], vm[0]) 
+                    completion_time += task_writing_times[next_subtask]
 
             if not vm in actual_schedules:
                 actual_schedules[vm] = []
@@ -75,22 +75,23 @@ def evaluate_batch (n, job, predictor, sched_solution, rng=None,
     completed = np.zeros(n, dtype=int).astype(bool)
 
     # sample actual execution times
-    all_task_durations = compute_task_durations_batch(n, job, sched_solution.vm_schedule, predictor, rng)
-    # TODO: compute tx times
+    all_task_durations, all_task_reading_times, all_task_writing_times = compute_task_durations_batch(n, job, sched_solution, predictor, rng)
 
     for i in range(n):
         task_durations = {x: all_task_durations[x][i] for x in all_task_durations}
+        task_writing_times = {x: all_task_writing_times[x][i] for x in all_task_writing_times}
+        task_reading_times = {x: all_task_reading_times[x][i] for x in all_task_reading_times}
         if accurate_simulation:
             if sched_solution.ignore_instance_numbers:
                 # Use Dyna-like simulator, which only considers the selected VM
                 # types and schedules tasks to instances on-line
                 if billing_period_sec <= 0:
                     billing_period_sec = 1
-                makespan,sol = simulate_dyna(job, predictor, sched_solution, task_durations, billing_period_sec=billing_period_sec)
+                makespan,sol = simulate_dyna(job, predictor, sched_solution, task_durations, task_writing_times, task_reading_times, billing_period_sec=billing_period_sec)
             else:
-                makespan,sol = simulate(job, predictor, sched_solution, task_durations)
+                makespan,sol = simulate(job, predictor, sched_solution, task_durations, task_writing_times, task_reading_times)
         else:
-            makespan,sol = __evaluate(job, predictor, sched_solution, task_durations)
+            makespan,sol = __evaluate(job, predictor, sched_solution, task_durations, task_writing_times, task_reading_times)
 
         if sol is None:
             # unfeasible run (likely a deadlock due to insufficient vCPU availability)
@@ -107,8 +108,12 @@ def evaluate_batch (n, job, predictor, sched_solution, rng=None,
     return makespans,costs,n_completed
 
 
-def compute_task_durations_batch (n, job, schedules, predictor, rng):
+def compute_task_durations_batch (n, job, sol, predictor, rng):
     durations = {}
+    reading_times = {}
+    writing_times = {}
+
+    schedules = sol.vm_schedule
 
     for vm in schedules:
         cold_start = True
@@ -120,11 +125,28 @@ def compute_task_durations_batch (n, job, schedules, predictor, rng):
             if rng is None:
                 avg_exec_time = predictor.exec_time (operator, job, vm[0], cold_start)
                 durations[subtask] = [avg_exec_time for i in range(n)] # deterministic
+
+                avg_writing_time = predictor.data_writing_time(operator, vm[0])
+                writing_times[subtask] = [avg_writing_time for i in range(n)]
+
+                for p in job.predecessors(subtask):
+                    if sol.subtask2instance[p] != vm:
+                        avg_reading_time = predictor.data_reading_time(p[0], operator, vm[0])
+                        reading_times[(p,subtask)] = [avg_reading_time for i in range(n)]
             else:
                 distribution = predictor.get_exec_time_distribution(operator, job, vm[0], cold_start)
                 durations[subtask] = distribution.sample(rng, n)
+
+                distribution = predictor.get_writing_time_distribution(operator, vm[0])
+                writing_times[subtask] = distribution.sample(rng, n)
+
+                for p in job.predecessors(subtask):
+                    if sol.subtask2instance[p] != vm:
+                        distribution = predictor.get_reading_time_distribution(p[0], operator, vm[0])
+                        reading_times[(p,subtask)] = distribution.sample(rng, n)
             cold_start = False
-    return durations
+
+    return durations, reading_times, writing_times
 
 class MonteCarloResults:
     def __init__ (self, total_runs, makespans, costs, completed_count, deadline):

@@ -47,7 +47,7 @@ def find_all_ready_tasks (job, sol, completed, running, blocked):
     return ready
 
 
-def simulate_dyna (job, predictor, sol, task_durations, billing_period_sec=1):
+def simulate_dyna (job, predictor, sol, task_durations, task_writing_times, task_reading_times, billing_period_sec=1):
     sol = sol.copy()
     actual_schedules = {}
     active_vm=set()
@@ -82,13 +82,13 @@ def simulate_dyna (job, predictor, sol, task_durations, billing_period_sec=1):
     def schedule_task_completion (task, vm):
         data_reading_time = 0
         for p in job.predecessors(task):
-            data_reading_time = max(data_reading_time, predictor.data_reading_time(p[0],task[0],vm[0]))
+            data_reading_time = max(data_reading_time, task_reading_times[p,task])
 
         completion_time = t + data_reading_time + task_durations[task]
 
         # check if we need to transfer output:
         # assume yes
-        completion_time += predictor.data_writing_time(task[0], vm[0]) 
+        completion_time += task_writing_times[task]
 
         # Update actual schedule
         if not vm in actual_schedules:

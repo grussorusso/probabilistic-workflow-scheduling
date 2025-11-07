@@ -138,7 +138,8 @@ def main(args):
         mean_exec_times = {op: exec_time_rng.uniform(4.0, 300.0) for op in job.nodes()}
     # Set operator distributions
     op_distributions = create_gamma_distributions(mean_exec_times, 1.0)
-    predictor = SimplePredictor(op_distributions, scalability_fun, op_output_mb=op_output_mb)
+    tx_distribution = distributions.HalfNormal(1)
+    predictor = SimplePredictor(op_distributions, scalability_fun, op_output_mb=op_output_mb, data_tx_distribution=tx_distribution)
 
     _, results, sched_time = experiment.run(infra, job, predictor, args, detailed_results=True)
     print(results)

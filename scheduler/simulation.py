@@ -62,7 +62,7 @@ def get_vm_ready_task (job, sol, completed, running, vm):
 
     return next_task
 
-def simulate (job, predictor, sol, task_durations):
+def simulate (job, predictor, sol, task_durations, task_writing_times, task_reading_times):
     sol = sol.copy()
     actual_schedules = {}
     active_vm=set()
@@ -149,7 +149,7 @@ def simulate (job, predictor, sol, task_durations):
             data_reading_time = 0
             for p in job.predecessors(task):
                 if sol.subtask2instance[p] != vm:
-                    data_reading_time = max(data_reading_time, predictor.data_reading_time(p[0],task[0],vm[0]))
+                    data_reading_time = max(data_reading_time, task_reading_times[(p, task)])
 
             completion_time = t + data_reading_time + task_durations[task]
 
@@ -159,7 +159,7 @@ def simulate (job, predictor, sol, task_durations):
                 if sol.subtask2instance[p] != vm:
                     colocated_successors = False
             if not colocated_successors:
-                    completion_time += predictor.data_writing_time(task[0], vm[0]) 
+                    completion_time += task_writing_times[task]
 
             # Update actual schedule
             if not vm in actual_schedules:
