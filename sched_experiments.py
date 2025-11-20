@@ -404,6 +404,11 @@ def experiment_distributions(args):
     args.deadline_percentile = 0.9
 
     my_distributions = ["Uniform", "Deterministic", "HalfNormal"]
+    tx_times_distributions = []
+    tx_times_distributions.append(("Deterministic", distributions.Deterministic(1)))
+    tx_times_distributions.append(("HalfNormal", distributions.HalfNormal(1)))
+    tx_times_distributions.append(("Gamma", distributions.Gamma(1, 0.5))) # 0.5 SCV
+
 
     single_core_speedup=0.1
     SCALABILITY_FUNCTIONS = [UniversalScalabilityFunction(0.01, 0.0, single_core_speedup=single_core_speedup,name="a10-2"),
@@ -436,59 +441,66 @@ def experiment_distributions(args):
                             elif d == "HalfNormal":
                                 op_distributions = create_halfnormal_distributions(mean_exec_times)
 
-                            predictor = SimplePredictor(op_distributions, scal_fun, FAMILY_SPEEDUP, op_output_mb=op_output_mb)
+                            for txd_label, txd in tx_times_distributions:
+                                predictor = SimplePredictor(op_distributions, 
+                                                            scal_fun,
+                                                            FAMILY_SPEEDUP,
+                                                            op_output_mb=op_output_mb,
+                                                            data_tx_distribution=txd)
 
-                            for percentile in [0.9]:
-                                args.deadline_percentile = percentile
+                                for percentile in [0.9]:
+                                    args.deadline_percentile = percentile
 
-                                # Check if we can skip this run
-                                if old_results is not None:
-                                    if not old_results[(old_results.Algorithm == alg) &\
-                                            (old_results.Job == job_name) &\
-                                            (old_results.ScalFunction == scal_fun.name) &\
-                                            (old_results.Seed == seed) &\
-                                            (old_results.Deadline == args.deadline) &\
-                                            (old_results.Distribution == d) &\
-                                            (old_results.VMTypes == n_vmtypes) &\
-                                            (old_results.Percentile == percentile)].empty:
-                                        print("Skipping conf")
-                                        continue
-                                if alg != "Genetic" and seed != SEEDS[0]:
-                                    continue # we only change seed for Genetic
+                                    # Check if we can skip this run
+                                    if old_results is not None:
+                                        if not old_results[(old_results.Algorithm == alg) &\
+                                                (old_results.Job == job_name) &\
+                                                (old_results.ScalFunction == scal_fun.name) &\
+                                                (old_results.Seed == seed) &\
+                                                (old_results.Deadline == args.deadline) &\
+                                                (old_results.Distribution == d) &\
+                                                (old_results.TXDistribution == txd_label) &\
+                                                (old_results.VMTypes == n_vmtypes) &\
+                                                (old_results.Percentile == percentile)].empty:
+                                            print("Skipping conf")
+                                            continue
+                                    if alg != "Genetic" and seed != SEEDS[0]:
+                                        continue # we only change seed for Genetic
 
-                                sol, eval_results, sched_time = experiment.run(infra, job, predictor, args, detailed_results=True)
+                                    sol, eval_results, sched_time = experiment.run(infra, job, predictor, args, detailed_results=True)
 
-                                result = {}
-                                result["VMTypes"] = n_vmtypes
-                                result["Job"] = job_name
-                                result["Nodes"] = len(list(job.nodes()))
-                                result["Deadline"] = args.deadline
-                                result["Percentile"] = percentile
-                                result["Algorithm"] = alg
-                                result["Distribution"] = d
-                                result["ScalFunction"] = scal_fun.name
-                                result["Seed"] = seed
-                                result["AvgCost"] = eval_results.avg_cost
-                                result["AvgMakespan"] = eval_results.avg_makespan
-                                result["StdCost"] = eval_results.std_cost
-                                result["StdMakespan"] = eval_results.std_makespan
-                                result["HitRatio"] = eval_results.hit_ratio
-                                result["AvgTardiness"] = eval_results.avg_tardiness
-                                result["MCRuns"] = eval_results.total_runs
-                                result["MCUnfeasibleRuns"] = eval_results.unfeasible_runs
-                                for ip,p in enumerate(eval_results.percentiles):
-                                    result[f"Makespan-P{p}"] = eval_results.makespan_quantiles[ip]
-                                for ip,p in enumerate(eval_results.percentiles):
-                                    result[f"Cost-P{p}"] = eval_results.cost_quantiles[ip]
-                                result["SchedulingTime"] = sched_time
+                                    result = {}
+                                    result["VMTypes"] = n_vmtypes
+                                    result["Job"] = job_name
+                                    result["Nodes"] = len(list(job.nodes()))
+                                    result["Deadline"] = args.deadline
+                                    result["Percentile"] = percentile
+                                    result["Algorithm"] = alg
+                                    result["Distribution"] = d
+                                    result["TXDistribution"] = txd_label
+                                    result["ScalFunction"] = scal_fun.name
+                                    result["Seed"] = seed
+                                    result["AvgCost"] = eval_results.avg_cost
+                                    result["AvgMakespan"] = eval_results.avg_makespan
+                                    result["StdCost"] = eval_results.std_cost
+                                    result["StdMakespan"] = eval_results.std_makespan
+                                    result["HitRatio"] = eval_results.hit_ratio
+                                    result["AvgTardiness"] = eval_results.avg_tardiness
+                                    result["MCRuns"] = eval_results.total_runs
+                                    result["MCUnfeasibleRuns"] = eval_results.unfeasible_runs
+                                    for ip,p in enumerate(eval_results.percentiles):
+                                        result[f"Makespan-P{p}"] = eval_results.makespan_quantiles[ip]
+                                    for ip,p in enumerate(eval_results.percentiles):
+                                        result[f"Cost-P{p}"] = eval_results.cost_quantiles[ip]
+                                    result["SchedulingTime"] = sched_time
 
-                                results.append(result)
-                                print(result)
-                                # save partial results
-                                resultsDf = pd.DataFrame(results)
-                                if old_results is not None:
-                                    resultsDf = pd.concat([old_results, resultsDf])
-                                resultsDf.to_csv(outfile, index=False)
+                                    results.append(result)
+                                    print(result)
+                                    # save partial results
+                                    resultsDf = pd.DataFrame(results)
+                                    if old_results is not None:
+                                        resultsDf = pd.concat([old_results, resultsDf])
+                                    resultsDf.to_csv(outfile, index=False)
 
     resultsDf = pd.DataFrame(results)
     if old_results is not None:
