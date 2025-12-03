@@ -2,6 +2,7 @@ import networkx as nx
 
 from scheduler.scheduling import *
 import scheduler.heft as heft
+import scheduler.icpcp as icpcp
 import scheduler.greedy as greedy
 import scheduler.genetic as genetic
 import scheduler.dyna as dyna
@@ -9,6 +10,7 @@ from scheduler import baselines
 from scheduler.probabilistic import ProbabilisticMOHEFT, ParallelProbMOHEFT, ParallelProbMOHEFT2
 
 SCHED_HEFT="HEFT"
+SCHED_ICPCP="ICPCP"
 SCHED_GC="GreedyCost"
 SCHED_MOHEFT="MOHEFT"
 SCHED_CloudMOHEFT="CloudMOHEFT"
@@ -33,6 +35,9 @@ class Scheduler:
             sol = h.schedule(job, deadline)
         elif algorithm == SCHED_HEFT or algorithm == "heft":
             h = heft.HEFT(self.infrastructure, predictor)
+            sol = h.schedule(job, deadline)
+        elif algorithm == SCHED_ICPCP:
+            h = icpcp.ICPCP(self.infrastructure, predictor)
             sol = h.schedule(job, deadline)
         elif algorithm == SCHED_GC:
             h = greedy.GreedyCost(self.infrastructure, predictor)
