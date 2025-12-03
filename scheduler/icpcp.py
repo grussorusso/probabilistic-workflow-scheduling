@@ -1,3 +1,4 @@
+import numpy as np
 from scheduler.job import *
 from scheduler.infrastructure import *
 from scheduler.scheduling import SchedulingSolution, ScheduleEntry
@@ -48,29 +49,35 @@ class ICPCP:
                 self.sol.vm_schedule[i] = []
 
         aft = {}
-        rankU = self.compute_rankU(job)
-        tasklist = sorted(job.nodes, key=lambda n: rankU[n], reverse=True)
+        est, eft, lft = self.compute_est_eft_lft(job, deadline)
+        if np.any(np.array(list(lft.values())) < 0):
+            print("Job cannot be scheduled within the given deadline.")
+            return None
+        tasklist = sorted(job.nodes, key=lambda n: eft[n], reverse=True)
 
         while len(tasklist) > 0:
             n = tasklist[0]
             tasklist = tasklist[1:]
 
             # Scheduling n
-            min_eft = None
-            min_est = None
+            min_actual_eft = None
+            min_actual_est = None
             min_eft_vm = None
             for vm in I:
-                # Compute EST based on predecessors (Eq. 5, HEFT)
-                est = 0.0
+                # Compute actual EST based on predecessors' actual finish times
+                actual_est = 0.0
                 data_reading_time = 0.0
                 for p in job.predecessors(n):
-                    est = max(est, aft[p])
+                    actual_est = max(actual_est, aft[p])
                     if not self.is_virtual_node(n) and not self.is_virtual_node(p) and self.sol.subtask2instance[p] != vm:
                         data_reading_time = max(data_reading_time, self.pred.data_reading_time(p[0],n[0],vm[0]))
 
+                # Use the pre-computed EST as a lower bound
+                actual_est = max(actual_est, est[n])
+
                 # Compute EST based on availability (Eq. 5, HEFT)
                 # Insertion-based policy
-                est, first_on_the_machine = self.min_schedulable_time (n, vm, self.sol.vm_schedule[vm], job, est)
+                actual_est, first_on_the_machine = self.min_schedulable_time (n, vm, self.sol.vm_schedule[vm], job, actual_est)
                 first_in_the_graph = (len(list(job.predecessors(n)))==0)
 
                 # EFT (Eq. 6, HEFT)
@@ -81,18 +88,20 @@ class ICPCP:
                     exec_time = self.pred.exec_time(n[0], job, vm[0], first_on_the_machine=first_on_the_machine, first_in_the_graph=first_in_the_graph) +\
                             data_reading_time +\
                             self.pred.data_writing_time(n[0], vm[0]) # We are assuming that successors are not co-located here...
-                eft = est + exec_time
+                actual_eft = actual_est + exec_time
 
-                if min_eft is None or eft < min_eft:
-                    min_est = est
-                    min_eft = eft
+                if min_actual_eft is None or actual_eft < min_actual_eft:
+                    min_actual_est = actual_est
+                    min_actual_eft = actual_eft
                     min_eft_vm = vm
 
-            aft[n] = min_eft
-            print(f"Scheduling {n} to {min_eft_vm} starting at {min_est}")
-            self.sol.add_scheduled_subtask(n, min_eft_vm, min_est, min_eft)
 
-        self.fix_schedule_with_colocation(job, rankU, aft, self.sol)
+            aft[n] = min_actual_eft
+            print(f"Scheduling {n} to {min_eft_vm} starting at {min_actual_est}")
+            self.sol.add_scheduled_subtask(n, min_eft_vm, min_actual_est, min_actual_eft)
+
+
+        self.fix_schedule_with_colocation(job, eft, aft, self.sol)
         return self.sol.copy()
 
     def min_schedulable_time (self, n, vm, curr_schedule, job, t0=0.0):
@@ -127,6 +136,15 @@ class ICPCP:
         exec_times = [self.pred.exec_time(node[0], job, vmt) for vmt in self.infra.vm_types]
         return sum(exec_times)/len(exec_times)
 
+    def min_computation_cost (self, node, job):
+        """
+        Returns the execution time of a node on the best (fastest) possible VM.
+        """
+        if self.is_virtual_node(node):
+            return 0.0
+        exec_times = [self.pred.exec_time(node[0], job, vmt) for vmt in self.infra.vm_types]
+        return min(exec_times)
+
     def avg_communication_cost (self, node1, node2, job):
         if self.is_virtual_node(node1) or self.is_virtual_node(node2):
             return 0.0
@@ -137,28 +155,46 @@ class ICPCP:
                    self.pred.data_reading_time(node1[0], node2[0], t2))
         return sum(costs)/len(costs)
 
-    def compute_rankU (self, job):
-        nodes = list(reversed(list(nx.topological_sort(job))))
-        ru = {n: 0.0 for n in list(job.nodes)}
-        while True:
-            delta = 0
-            for n in nodes:
-                succ_rank = [self.avg_communication_cost(n,succ, job) + ru[succ] for succ in job.successors(n)]
-                if len(succ_rank) == 0:
-                    succ_rank = [0.0]
-                old_value = ru[n]
-                ru[n] = max(ru[n], self.avg_computation_cost(n, job) + max(succ_rank))
-                delta = max(delta, ru[n]-old_value)
-            if delta < 0.0001:
-                break
-        return ru
+    def compute_est_eft_lft(self, job, deadline):
+        """
+        Compute EST (Estimated Start Time) and EFT (Estimated Finish Time) for each task.
+        This is the core of the IC-PCP algorithm.
+        
+        Returns:
+            est: dict mapping each node to its EST value
+            eft: dict mapping each node to its EFT value
+        """
+        est = {n: 0.0 for n in job.nodes}
+        eft = {n: 0.0 for n in job.nodes}
+        
+        # Topological sort to process nodes in dependency order
+        nodes = list(nx.topological_sort(job))
+        
+        for n in nodes:
+            est[n] = 0.0
+            for p in job.predecessors(n):
+                est[n] = max(est[p] + self.avg_communication_cost(p, n, job) + self.min_computation_cost(p, job), est[n])
 
-    def fix_schedule_with_colocation (self, job, rankU, aft, sol):
+            # EFT = EST + min execution time
+            eft[n] = est[n] + self.min_computation_cost(n, job)
+
+        lft = {n: 0.0 for n in job.nodes}
+        nodes = list(nx.topological_sort(job.reverse()))
+        for n in nodes:
+            lft[n] = deadline
+            for c in job.successors(n):
+                lft[n] = min(lft[n], lft[c] - self.min_computation_cost(c, job) - self.avg_communication_cost(n, c, job))
+        
+        return est, eft, lft
+    
+
+
+    def fix_schedule_with_colocation (self, job, eft, aft, sol):
         """
         We exploit co-location if possible to avoid some result writing,
-        whose delay has been considered during HEFT execution.
+        whose delay has been considered during scheduling execution.
         """
-        tasklist = sorted(job.nodes, key=lambda n: rankU[n], reverse=True)
+        tasklist = sorted(job.nodes, key=lambda n: eft[n], reverse=True)
 
         while len(tasklist) > 0:
             n = tasklist[0]
