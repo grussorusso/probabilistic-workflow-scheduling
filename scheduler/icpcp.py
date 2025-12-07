@@ -70,6 +70,7 @@ class ICPCP:
                 for i,task in enumerate(PCP):
                     if i == 0:
                         _est = est[task]
+                    _est, _ = self.min_schedulable_time (task, vm, self.sol.vm_schedule[vm], job, _est)
                     _ast[task] = _est
                     _eft = _est + self.pred.exec_time(task[0], job, vm[0])
                     if _eft > lft[task]:
