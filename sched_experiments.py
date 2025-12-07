@@ -800,7 +800,7 @@ def experiment_main_comparison(args, debug=False):
             for percentile_margin in CONSERVATIVE_MARGINS:
                 args.percentile_margin = percentile_margin
 
-                for alg in [algorithms.SCHED_CloudMOHEFT, algorithms.SCHED_ProbMOHEFT, algorithms.SCHED_GC, algorithms.SCHED_HEFT, algorithms.SCHED_GENETIC, algorithms.SCHED_DYNA, algorithms.SCHED_ParallelProbMOHEFT]:
+                for alg in [algorithms.SCHED_CloudMOHEFT, algorithms.SCHED_ProbMOHEFT, algorithms.SCHED_GC, algorithms.SCHED_HEFT, algorithms.SCHED_GENETIC, algorithms.SCHED_DYNA, algorithms.SCHED_ParallelProbMOHEFT, algorithms.SCHED_ICPCP]:
                     args.algorithm = alg
                     for n_vmtypes in [2,4,8,13,21]:
                         infra = create_provider_infrastructure(n_vmtypes)
