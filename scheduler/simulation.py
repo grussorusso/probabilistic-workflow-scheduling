@@ -172,6 +172,10 @@ def simulate (job, predictor, sol, task_durations, task_writing_times, task_read
 
     if len(to_complete) > 0:
         print("Unfeasible!!!")
+        #print(blocked_vm)
+        #print(f"To complete: {to_complete}")
+        #print(f"Completed: {completed}")
+        #print(f"Ready: {list(find_all_ready_tasks(job, sol, completed))}")
         return None, None 
 
     makespan = t

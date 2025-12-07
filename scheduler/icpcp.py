@@ -102,8 +102,7 @@ class ICPCP:
                     eft[succ] = est[succ] + self.min_computation_cost(succ, job)
                 # update LFT for predecessors
                 for pred in job.predecessors(task):
-                    for c in job.successors(pred):
-                        lft[pred] = min(lft[pred], lft[c] - self.min_computation_cost(c, job) - self.avg_communication_cost(pred, c, job))
+                    lft[pred] = min(lft[pred], ast[task] - self.avg_communication_cost(pred, task, job))
                 ok = self.assign_parents(task, job, deadline, assigned, ast, est, eft, lft)
                 if not ok:
                     return False
@@ -161,6 +160,12 @@ class ICPCP:
         ok = self.assign_parents(virtual_exit, job, deadline, assigned, ast, est, eft, lft)
         if not ok:
             return None
+
+        #CHECK
+        for vm,entries in self.sol.vm_schedule.items():
+            if len(entries) > 0:
+                print(f"{vm}-----------------")
+                print(entries)
 
         return self.sol.copy()
 

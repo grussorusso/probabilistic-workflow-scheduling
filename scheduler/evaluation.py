@@ -33,7 +33,7 @@ def __evaluate (job, predictor, sol, task_durations, task_writing_times, task_re
                 else:
                     start_time = max(start_time, completion_times[p])
                     if sol.subtask2instance[p] != vm:
-                        data_reading_time = max(data_reading_time, task_reading_times(p,next_subtask))
+                        data_reading_time = max(data_reading_time, task_reading_times[(p,next_subtask)])
 
             if not can_execute:
                 continue
