@@ -14,6 +14,100 @@ class ICPCP:
         """Check if a node is a virtual entry or exit node."""
         return node[0].name in ["virtual_entry", "virtual_exit"]
 
+
+    def assign_parents(self, node, job, deadline, assigned, ast, est, eft, lft):
+        """
+        Assign parent nodes in the IC-PCP algorithm.
+        
+        Args:
+            job: The job DAG
+            deadline: The deadline for the job
+            assigned: Set of nodes that have already been assigned
+            ast: Dictionary mapping nodes to their assigned start times
+        """
+        I = list(self.infra.all_instances())
+        def has_unassigned_parent (node, job, assigned):
+            parents = job.predecessors(node)
+            for p in parents:
+                if p not in assigned:
+                    return True
+            return False
+
+        def critical_parent (node, job, assigned):
+            critical = None
+            critical_dat = 0.0
+            assert(has_unassigned_parent(node, job, assigned))
+            for p in job.predecessors(node):
+                if p in assigned:
+                    continue
+                dat = eft[p] + self.avg_communication_cost(p, node, job)
+                if dat > critical_dat:
+                    critical = p
+                    critical_dat = dat
+            return critical
+
+        while has_unassigned_parent(node, job, assigned):
+            PCP = []
+            n = node
+            while has_unassigned_parent(n, job, assigned):
+                cp = critical_parent(n, job, assigned)
+                PCP = [cp] + PCP
+                n = cp
+
+            print(f"PCP is {PCP}")
+            
+            # assign path
+            # find vm type cheapest to execute the path
+            min_cost = float("inf")
+            min_vm = None
+            min_ast = None
+            for vm in I:
+                feasible = True
+                _ast = {}
+                # Compute actual finish times
+                _est = 0.0
+                cost = 0.0
+                for i,task in enumerate(PCP):
+                    if i == 0:
+                        _est = est[task]
+                    _ast[task] = _est
+                    _eft = _est + self.pred.exec_time(task[0], job, vm[0])
+                    if _eft > lft[task]:
+                        feasible = False
+                        break
+                    _est = _eft
+                    cost += self.pred.exec_time(task[0], job, vm[0]) * vm[0].cost
+                if not feasible:
+                    continue
+                if cost < min_cost:
+                    min_cost = cost
+                    min_vm = vm
+                    min_ast = _ast
+
+            if min_vm is None:
+                return False
+            
+            for task in PCP:
+                ast[task] = min_ast[task]
+                est[task] = min_ast[task]
+                eft[task] = min_ast[task] + self.pred.exec_time(task[0], job, min_vm[0])
+                print(f"Scheduling {task} to {min_vm} [{ast[task]}-{eft[task]}]")
+                self.sol.add_scheduled_subtask(task, min_vm, ast[task], eft[task])
+                assigned.add(task)
+
+            for task in PCP:
+                for succ in job.successors(task):
+                    est[succ] = max(est[succ], eft[task] + self.avg_communication_cost(task, succ, job))
+                    eft[succ] = est[succ] + self.min_computation_cost(succ, job)
+                # update LFT for predecessors
+                for pred in job.predecessors(task):
+                    for c in job.successors(pred):
+                        lft[pred] = min(lft[pred], lft[c] - self.min_computation_cost(c, job) - self.avg_communication_cost(pred, c, job))
+                ok = self.assign_parents(task, job, deadline, assigned, ast, est, eft, lft)
+                if not ok:
+                    return False
+        return True
+
     def schedule (self, job, deadline):
         assert(isinstance(job, Job))
         assert(deadline > 0.0)
@@ -25,21 +119,17 @@ class ICPCP:
         sources = list(job.sources())
         sinks = list(job.sinks())
         
-        # Add virtual entry node if there are multiple sources
-        virtual_entry = None
-        if len(sources) > 1:
-            virtual_entry = (Operator("virtual_entry"), -1)
-            job.add_node(virtual_entry)
-            for src in sources:
-                job.add_edge(virtual_entry, src)
+        # Always add virtual entry node
+        virtual_entry = (Operator("virtual_entry"), -1)
+        job.add_node(virtual_entry)
+        for src in sources:
+            job.add_edge(virtual_entry, src)
         
-        # Add virtual exit node if there are multiple sinks
-        virtual_exit = None
-        if len(sinks) > 1:
-            virtual_exit = (Operator("virtual_exit"), -1)
-            job.add_node(virtual_exit)
-            for sink in sinks:
-                job.add_edge(sink, virtual_exit)
+        # Always add virtual exit node
+        virtual_exit = (Operator("virtual_exit"), -1)
+        job.add_node(virtual_exit)
+        for sink in sinks:
+            job.add_edge(sink, virtual_exit)
 
         I = list(self.infra.all_instances())
 
@@ -55,53 +145,22 @@ class ICPCP:
             return None
         tasklist = sorted(job.nodes, key=lambda n: eft[n], reverse=True)
 
-        while len(tasklist) > 0:
-            n = tasklist[0]
-            tasklist = tasklist[1:]
+        assigned = set()
+        ast = {}
 
-            # Scheduling n
-            min_actual_eft = None
-            min_actual_est = None
-            min_eft_vm = None
-            for vm in I:
-                # Compute actual EST based on predecessors' actual finish times
-                actual_est = 0.0
-                data_reading_time = 0.0
-                for p in job.predecessors(n):
-                    actual_est = max(actual_est, aft[p])
-                    if not self.is_virtual_node(n) and not self.is_virtual_node(p) and self.sol.subtask2instance[p] != vm:
-                        data_reading_time = max(data_reading_time, self.pred.data_reading_time(p[0],n[0],vm[0]))
+        # Line 5
+        ast[virtual_entry] = 0.0
+        ast[virtual_exit] = deadline
 
-                # Use the pre-computed EST as a lower bound
-                actual_est = max(actual_est, est[n])
-
-                # Compute EST based on availability (Eq. 5, HEFT)
-                # Insertion-based policy
-                actual_est, first_on_the_machine = self.min_schedulable_time (n, vm, self.sol.vm_schedule[vm], job, actual_est)
-                first_in_the_graph = (len(list(job.predecessors(n)))==0)
-
-                # EFT (Eq. 6, HEFT)
-                # Virtual nodes have zero execution time
-                if self.is_virtual_node(n):
-                    exec_time = 0.0
-                else:
-                    exec_time = self.pred.exec_time(n[0], job, vm[0], first_on_the_machine=first_on_the_machine, first_in_the_graph=first_in_the_graph) +\
-                            data_reading_time +\
-                            self.pred.data_writing_time(n[0], vm[0]) # We are assuming that successors are not co-located here...
-                actual_eft = actual_est + exec_time
-
-                if min_actual_eft is None or actual_eft < min_actual_eft:
-                    min_actual_est = actual_est
-                    min_actual_eft = actual_eft
-                    min_eft_vm = vm
+        # Line 6
+        assigned.add(virtual_entry)
+        assigned.add(virtual_exit)
 
 
-            aft[n] = min_actual_eft
-            print(f"Scheduling {n} to {min_eft_vm} starting at {min_actual_est}")
-            self.sol.add_scheduled_subtask(n, min_eft_vm, min_actual_est, min_actual_eft)
+        ok = self.assign_parents(virtual_exit, job, deadline, assigned, ast, est, eft, lft)
+        if not ok:
+            return None
 
-
-        self.fix_schedule_with_colocation(job, eft, aft, self.sol)
         return self.sol.copy()
 
     def min_schedulable_time (self, n, vm, curr_schedule, job, t0=0.0):
