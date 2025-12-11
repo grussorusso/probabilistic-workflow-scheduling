@@ -243,6 +243,7 @@ class MonteCarloEvaluator:
 
             if rel_error < self.max_relative_error:
                 break
+        print(f"Evaluations: {i}")
 
         if not detailed_results:
             mean_makespan = np.mean(makespans) if completed_count > 0 else -1
